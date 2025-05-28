@@ -134,8 +134,3 @@ Unit tests must verify:
 
 Copyright and related rights waived via CC0.
 
----
-
-This ERC defines a modular, zk-powered recovery mechanism usable in modern Ethereum post-7864. It balances privacy, simplicity, gas-efficiency, and extensibility, and should serve as the base for future enhancements like threshold recovery, post-quantum zk-schemes, and zk-bridging.
-
-```
