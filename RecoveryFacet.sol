@@ -1,3 +1,10 @@
+event KeyRotated(
+    address indexed account,   // recovered EOA (= address(this))
+    address indexed guardian,  // tx.origin
+    uint256 pkX,
+    uint256 pkY
+);
+
 function rotateKey(
     uint256 newX, uint256 newY,
     bytes calldata proof, uint256[3] calldata pubIn,
