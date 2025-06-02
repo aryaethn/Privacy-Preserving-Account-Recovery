@@ -1,44 +1,21 @@
-event KeyRotated(
-    address indexed account,   // recovered EOA (= address(this))
-    address indexed guardian,  // tx.origin
-    uint256 pkX,
-    uint256 pkY
-);
+// SPDX-License-Identifier: CC0-1.0
+pragma solidity ^0.8.24;
 
-function rotateKey(
-    uint256 newX, uint256 newY,
-    bytes calldata proof, uint256[3] calldata pubIn,
-    bytes32[] calldata path, uint256 idx,
-    uint256 headerNum, uint8 rootSrc   // 0=direct, 1=relay
-) external {
-    // 0. Resolve state root
-    bytes32 root = rootSrc == 0
-        ? blockhash(headerNum)
-        : StateRootRelay(RELAY).rootOf(headerNum);
-    require(root != 0, "PPAR: unknown root");
+/**
+ * Executed _inside_ the lost EOA via EIP-7702 delegation.
+ * Merely updates two storage words that represent the new public-key.
+ */
+contract RecoveryFacet {
+    bytes32 private constant PK_X_SLOT = keccak256("ppar.pk.x");
+    bytes32 private constant PK_Y_SLOT = keccak256("ppar.pk.y");
 
-    // 1. Merkle inclusion
-    uint256 depth = path.length;
-    require(depth > 0 && depth <= 256,    "PPAR: bad depth");
-    require(idx < (1 << depth),           "PPAR: idx big");
-    require(_verifyPath(root, path, idx,
-            bytes32(pubIn[0]), depth),    "PPAR: bad path");
+    event KeyRotated(address indexed newEOA);
 
-    // 2. Public-input sanity
-    require(newX == pubIn[1] && newY == pubIn[2],
-            "PPAR: pubIn mismatch");
-
-    // 3. SNARK verification
-    require(Verifier.verifyProof(proof, pubIn),
-            "PPAR: invalid ZK proof");
-
-    // 4. On-curve check
-    require(_isOnCurve(newX, newY),       "PPAR: bad key");
-
-    // 5. Rotate key (executing in EOA frame)
-    assembly {
-        sstore(PK_X_SLOT, newX)
-        sstore(PK_Y_SLOT, newY)
+    function rotateKey(address newEOA) external {
+        assembly {
+            sstore(PK_X_SLOT, newEOA)
+            sstore(PK_Y_SLOT, 0)
+        }
+        emit KeyRotated(newEOA);
     }
-    emit KeyRotated(address(this), tx.origin, newX, newY);
 }
