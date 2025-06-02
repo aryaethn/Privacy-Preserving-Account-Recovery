@@ -1,136 +1,200 @@
 ```
 ERC: TBD
-Title: Privacy-Preserving Account Recovery (PPAR)
-Authors: Arya <arya.eth>
+Title: Privacy-Preserving Account Recovery with OAuth (PPAR-OAuth)
+Authors: Arya, Ardeshir, Hosein
 Status: Draft
 Type: Standards Track
 Category: Wallet
-Created: 2025-05-27
-Requires: 7864, 7702, 4844
+Created: 2025-06-02
+Requires: 7702, 2537
 ```  
 
 ## Abstract
 
-This ERC defines a standard for privacy-preserving account recovery (PPAR) for Ethereum EOAs. PPAR leverages the Unified Binary Tree state model from EIP-7864, temporary contract execution from EIP-7702, and efficient calldata handling from EIP-4844 to enable secure key rotation by guardians using SNARKs. It ensures guardians do not expose secrets or raw signatures while remaining cost-effective and forward-compatible with evolving proof systems.
+This ERC introduces a privacy-preserving account recovery method for EOAs using OAuth credentials (e.g., Google accounts), optionally combined with a password for added security. It leverages EIP-7702 to execute recovery logic in the EOA context and EIP-2537 for efficient BLS12-381 pairing operations during proof verification. All identity checks are wrapped inside a zero-knowledge proof (PLONK + KZG), ensuring that neither the OAuth token nor the user’s password is exposed on-chain.
 
 ## Motivation
 
-Social recovery is critical for onboarding and long-term self-custody but often exposes private recovery secrets or relies on smart contracts with upgrade risks. PPAR enables:
+Current Ethereum wallets are dangerously fragile: loss of the secp256k1 private key results in irrevocable loss of access. While account abstraction (e.g., ERC-4337) and social recovery mechanisms mitigate this risk, they often compromise privacy by exposing secrets or guardian identities on-chain.
 
-- Guardians to authenticate via zero-knowledge proof of knowledge of a secret.
-- Account owners to recover control without revealing private data or deploying permanent contracts.
-- Minimal on-chain footprint using existing standards.
+PPAR-OAuth preserves the strengths of social recovery while offering:
+- Full privacy: no raw secrets or signatures are revealed
+- Succinct verification: < 1 MB proof, < 800k gas cost
+- Familiar UX: recovery via "Sign in with Google"
+- Optional 2FA using password
 
-| Enabling EIP | What it changes | Why PPAR needs it |
-|-------------|------------------|--------------------|
-| EIP-7864 | Replaces hexary Patricia trie with balanced binary Merkle tree | Guardians can store `Poseidon(secret)` directly as a leaf |
-| EIP-7702 | EOAs can execute one-off code per transaction | Allows recovery logic to be executed from the EOA context |
-| EIP-4844 | Introduces blobs for efficient calldata | SNARK proofs and Merkle paths fit in a single blob |
+This is ideal for mass adoption, offering secure recovery with mainstream user flows.
 
 ## Specification
 
-### 1. Protocol Overview
+### 1. Guardian State
 
-Statement: Prove knowledge of `secret` such that:
-- `Poseidon(secret) == leafHash`
-- `Schnorr(secret, newPK) == valid`
+| Item                     | Storage       | Purpose                             |
+|--------------------------|---------------|--------------------------------------|
+| `emailHash`             | Guardian map  | SHA256(lower(Gmail)) → binds user   |
+| `pwHash`, `salt` (opt.) | Guardian map  | Poseidon-hash of password            |
+| `mode` (0x01/0x02)      | Guardian map  | Google-only or Google + password     |
 
-Public Inputs:
-- `leafHash`, `newPKx`, `newPKy`
+### 2. ZK Proofs
 
-Proof System:
-- Baseline: Groth16 on BN254
+#### Mode 0x01: Google only
 
-### 2. On-chain Execution
+Statement:
+- Know valid ID-token T such that:
+  - `ECDSA_P256_Verify(Google_JWKS, T) = true`
+  - `SHA256(lower(email in T)) = emailHash`
+  - `nonce(T) = N`
 
-Recovery is triggered via an EIP-7702 transaction containing `RecoveryFacet` logic. On-chain steps:
+Outputs: `(emailHash, newEOA, N)`
 
-1. Resolve state root (blockhash or relay)
-2. Verify Merkle inclusion of leafHash
-3. Confirm SNARK proof validity
-4. Confirm new public key is on-curve
-5. Write new key to EOA storage slots
+#### Mode 0x02: Google + password
 
-### 3. Circuit Definition
+Same as above, with:
+- `Poseidon(salt ∥ password) = pwHash`
 
-- Poseidon pre-image: ~250 constraints
-- Schnorr signature: ~7,200 constraints
-- Glue logic: ~150 constraints
-- Total: ~7,600 constraints
+Outputs: `(emailHash, newEOA, N, pwHash, salt)`
 
-Verifier: Solidity verifier exported from `snarkjs`
+#### Proof System
+- PLONK + KZG (EIP-2537 precompile support)
+- Curve: BLS12-381
+- Size: ~1.1 kB
+- Gates: ~142,000 (password mode)
 
-### 4. Shared Contracts
-
-**StateRootRelay**
-- Caches state roots for >256-block-old recoveries
-
-**RecoveryFacet**
-- Performs Merkle verification, SNARK verification, and key rotation
-- Emits `KeyRotated(account, guardian, pkX, pkY)`
-
-### 5. Calldata & Gas
-
-- Calldata size: ~8.5 kB (fits one EIP-4844 blob)
-
-| Path Type        | Verify Gas | Extra Gas         | Total |
-|------------------|------------|-------------------|-------|
-| Direct (<256 blk)| ~228k      | ~12k              | ~240k |
-| Relay-root       | ~228k      | ~32k (relay+extra)| ~260k |
-
-### 6. Formal Semantics
-
-Two sstore operations to persistent slots inside the EOA:
+### 3. RecoveryFacet (EIP-7702 delegated logic)
 ```solidity
-sstore(PK_X_SLOT, newX);
-sstore(PK_Y_SLOT, newY);
+bytes32 constant PK_X_SLOT = keccak256("ppar.pk.x");
+bytes32 constant PK_Y_SLOT = keccak256("ppar.pk.y");
+
+function rotateKey(address newEOA) external {
+    assembly {
+        sstore(PK_X_SLOT, newEOA)
+        sstore(PK_Y_SLOT, 0)
+    }
+    emit KeyRotated(newEOA);
+}
 ```
 
-Wallets validate future signatures using these slots—no registry or proxy needed.
+### 4. Guardian Contract Logic
 
-### 7. Guardian CLI
+```solidity
+struct Record {
+    address oldEOA;
+    bytes32 pwHash;
+    bytes32 salt;
+    uint8   mode;
+}
 
-```sh
-ppar witness secret newX newY path idx root headerNum > witness.json
-snarkjs groth16 prove ppar.zkey witness.json proof.json
-ppar send --account guardian.eth proof.json --new-key newX:newY --path ... --idx ... --header headerNum
+mapping(bytes32 => Record) public rec;
+mapping(bytes32 => bool) public usedN;
+
+IKZGVerifier googleV;   // 3 pub-inputs
+IKZGVerifier googlePwV; // 5 pub-inputs
+
+function requestNonce(bytes32 emailH) external returns (bytes32 N) {
+    N = keccak256(abi.encodePacked(emailH, blockhash(block.number-1)));
+    require(!usedN[N], "inflight");
+    emit Nonce(emailH, N);
+}
+
+function recover(bytes32 emailH, address newEOA, bytes32 N, bytes calldata proof) external {
+    Record memory r = rec[emailH];
+    require(r.mode != 0, "unregistered");
+    require(!usedN[N],   "nonce used");
+
+    bool ok = (r.mode == 0x01)
+        ? googleV.verifyProof(proof, [uint256(emailH), uint256(uint160(newEOA)), uint256(N)])
+        : googlePwV.verifyProof(proof, [uint256(emailH), uint256(uint160(newEOA)), uint256(N), uint256(r.pwHash), uint256(r.salt)]);
+
+    require(ok, "bad proof");
+    usedN[N] = true;
+
+    bytes memory cd = abi.encodeWithSelector(RecoveryFacet.rotateKey.selector, newEOA);
+    _callVia7702(r.oldEOA, cd);
+
+    emit Recovered(r.oldEOA, newEOA, msg.sender, r.mode);
+}
 ```
 
 ## Rationale
 
-- **BN254 + Groth16**: Optimal for cost-efficiency and precompile availability
-- **Poseidon hash**: Chosen for SNARK-native efficiency
-- **Schnorr signature**: Enables `secret` to serve as both proof and signer key
-- **EIP-7702**: Enables execution from EOAs without contract deployment
-- **EIP-4844**: Ensures calldata (SNARK, path, metadata) fits within a single blob
+- **PLONK + KZG on BLS12-381** is chosen for:
+  - Universal trusted setup
+  - Efficient 1.1 kB proofs for large circuits (~142k gates)
+  - Flexibility for future extensions (e.g., WebAuthn)
+
+- **EIP-7702** enables one-time code execution without full smart wallet deployment
+
+- **EIP-2537** pairing precompiles drastically lower verification gas for BLS12-381
+
+- Passwords are optional: mode 0x02 adds minimal cost but maximum resilience
 
 ## Backwards Compatibility
 
-Not backward compatible with pre-7864 state model. Requires EIP-7864, EIP-7702, and EIP-4844 to be activated on the network.
+Not compatible with pre-7702 environments. Assumes EIP-7702 and EIP-2537 are deployed.
 
 ## Security Considerations
 
-- SNARK Soundness: Relies on Groth16, Poseidon, Schnorr, and DLP assumptions
-- Replay Protection: `newPK` is signed and cross-verified
-- Root Validity: Blockhash or relay-provided root
-- Circuit Safety: Public input check and curve validation block invalid proofs
+- Email hash and nonce prevent token replay
+- Guardian does not store plaintext email or secrets
+- Signature verified inside circuit via trusted JWKS
+- Password hash pre-image check ensures offline second-factor
+
+## Gas Impact
+
+| Component                    | Mode 0x01 | Mode 0x02 |
+|-----------------------------|-----------|-----------|
+| PLONK verify (pairing + MSM)| 540 k     | 545 k     |
+| Storage ops                 | 5 k       | 5 k       |
+| `rotateKey` execution       | 240 k     | 240 k     |
+| **Total**                   | ~785 k    | ~790 k    |
+
+Cost at 30 gwei / $3k ETH: ~$1.88
+
+## Improvements if EIP-7864 Ships
+
+- Embed `emailHash` into global state tree instead of local mapping
+- Benefit: saves ~30k gas on registration and ~5k on recovery
+- Cost: add 256-hash Merkle proof (~9k gates) → negligible proof growth
+
+## Flow Diagram
+
+```text
+User → Guardian:
+ 1. requestNonce(emailHash)
+ 2. receive nonce N
+ 3. log in with Google (→ ID-token T)
+ 4a. [optional] enter password
+ 4b. run prover → ZK proof π
+ 5. call recover(emailHash, newEOA, N, π)
+Guardian:
+ 6. verify π + check nonce
+ 7. call rotateKey(oldEOA, newEOA) via 7702
+RecoveryFacet:
+ 8. sstore new key → emit KeyRotated
+Guardian:
+ 9. emit Recovered
+```
 
 ## Test Cases
 
-Unit tests must verify:
-- Successful key rotation with valid SNARK & path
-- Invalid path rejections
-- Invalid proof rejections
-- Invalid public key rejections
-- Relay-root handling
+- Test valid Google-only recovery
+- Test valid Google+password recovery
+- Reject reused nonces
+- Reject invalid proofs
+- Confirm key rotation inside EOA
 
 ## Reference Implementation
 
-- Circom circuit: `ppar.circom`
-- Solidity contracts: `RecoveryFacet.sol`, `StateRootRelay.sol`, `Verifier.sol`
-- CLI tool: `ppar.js`
+- Circom circuits for Google JWT + password
+- Solidity contracts: `Guardian.sol`, `RecoveryFacet.sol`
+- Verifier contracts via `snarkjs` + `zk-verifier-factory`
 
 ## Copyright
 
-Copyright and related rights waived via CC0.
+CC0 Public Domain Dedication
 
+---
+
+PPAR-OAuth upgrades key recovery into a mainstream-compatible flow without exposing sensitive data. Secure, scalable, and developer-friendly, it’s a building block for future identity-anchored wallets.
+
+```
