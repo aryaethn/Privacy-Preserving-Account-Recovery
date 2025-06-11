@@ -5,21 +5,20 @@ include "../node_modules/circomlib/circuits/sha256/sha256.circom";
 include "../node_modules/circomlib/circuits/bitify.circom";
 
 /*
- * @title Bytes2Bits
- * @notice Converts an array of bytes (field elements) into an array of bits (big-endian).
- * @param nBytes The number of bytes in the input array.
- */
+ * @title Bytes2Bits
+ * @notice Converts an array of bytes (field elements) into an array of bits (big-endian).
+ */
 template Bytes2Bits(nBytes) {
     signal input in[nBytes];
     signal output out[nBytes * 8];
     
+    component n2b[nBytes];
+
     for (var i = 0; i < nBytes; i++) {
-        component n2b = Num2Bits(8);
-        n2b.in <== in[i];
+        n2b[i] = Num2Bits(8);
+        n2b[i].in <== in[i];
         for (var j = 0; j < 8; j++) {
-            // Circom's Num2Bits outputs little-endian, so we reverse
-            // to get the standard big-endian representation of each byte.
-            out[i * 8 + j] <== n2b.out[7 - j];
+            out[i * 8 + j] <== n2b[i].out[7 - j];
         }
     }
 }
@@ -37,34 +36,24 @@ template Sha256HeaderHasher(maxHeaderLen) {
     // The pre-image, known only to the prover.
     signal input header[maxHeaderLen];
     // The expected hash digest, known by everyone.
-    signal input headerHash[256];
+    signal input headerHash[2];
 
     // ---
     // STAGE 1: Convert the header from bytes to bits.
     // ---
     component bytes2bits = Bytes2Bits(maxHeaderLen);
-    for (var i = 0; i < maxHeaderLen; i++) {
-        bytes2bits.in[i] <== header[i];
-    }
+    bytes2bits.in <== header;
 
-    // ---
-    // STAGE 2: Hash the resulting bit array.
-    // The Sha256 component's input size must be a constant multiple of 8.
-    // ---
     component hasher = Sha256(maxHeaderLen * 8);
-    for (var i = 0; i < maxHeaderLen * 8; i++) {
-        hasher.in[i] <== bytes2bits.out[i];
-    }
+    hasher.in <== bytes2bits.out;
 
-    // ---
-    // STAGE 3: Constrain the computed hash to equal the public hash.
-    // This is the core assertion of the proof. If the hashes do not match,
-    // the witness cannot be generated, and the proof will fail.
-    // ---
-    for (var i = 0; i < 256; i++) {
-        headerHash[i] === hasher.out[i];
+    component n2b_high = Num2Bits(128);
+    component n2b_low = Num2Bits(128);
+    n2b_high.in <== headerHash[0];
+    n2b_low.in <== headerHash[1];
+
+    for (var i = 0; i < 128; i++) {
+        hasher.out[i] === n2b_high.out[127 - i];
+        hasher.out[128 + i] === n2b_low.out[127 - i];
     }
 }
-
-// Example instantiation for a header buffer of 1024 bytes.
-component main {public [headerHash]} = Sha256HeaderHasher(1024);
