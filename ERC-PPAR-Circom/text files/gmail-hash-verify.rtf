@@ -1,0 +1,228 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 pragma circom 2.0.0;\
+\
+// Standard library components for hashing and comparison.\
+include "../node_modules/circomlib/circuits/sha256/sha256.circom";\
+include "../node_modules/circomlib/circuits/comparators.circom";\
+include "../node_modules/circomlib/circuits/bitify.circom";\
+\
+/*\
+ * @title SubArrayEquals\
+ * @notice Compares a prefix of `slice` with `sub` up to a given `len`.\
+ */\
+template SubArrayEquals(maxLen) \{\
+    var nBits = 16;\
+    signal input slice[maxLen];\
+    signal input sub[maxLen];\
+    signal input len; // The actual length to compare\
+    signal output out;\
+\
+    signal allMatch <== 1;\
+\
+    for (var i = 0; i < maxLen; i++) \{\
+        component i_lt_len = LessThan(nBits);\
+        i_lt_len.in[0] <== i;\
+        i_lt_len.in[1] <== len;\
+\
+        component eq = IsEqual();\
+        eq.in[0] <== slice[i];\
+        eq.in[1] <== sub[i];\
+        \
+        signal isMatch <== 1 - i_lt_len.out + eq.out;\
+        allMatch <== allMatch * isMatch;\
+    \}\
+    out <== allMatch;\
+\}\
+\
+\
+/*\
+ * @title Bytes2Bits\
+ * @notice Converts an array of bytes (field elements) into an array of bits (big-endian).\
+ */\
+template Bytes2Bits(nBytes) \{\
+    signal input in[nBytes];\
+    signal output out[nBytes * 8];\
+    \
+    for (var i = 0; i < nBytes; i++) \{\
+        component n2b = Num2Bits(8);\
+        n2b.in <== in[i];\
+        for (var j = 0; j < 8; j++) \{\
+            out[i * 8 + j] <== n2b.out[7 - j];\
+        \}\
+    \}\
+\}\
+\
+\
+/*\
+ * @title ExtractAndVerifyHash\
+ * @notice Extracts a substring from a header and verifies its SHA-256 hash.\
+ * @dev The item "from:" is hardcoded. The extracted string is padded to maxOutputLen before hashing.\
+ */\
+\
+ // header ([]bytes) : Private\
+ // gmailHash (256-bit integer) : Private\
+template ExtractAndVerifyHash(maxSliceLen, maxItemLen, maxOutputLen) \{\
+    // === INPUTS ===\
+    signal input header[maxSliceLen];       // The header byte array to search within.\
+    signal input gmailHash[256];            // The expected SHA-256 hash of the padded extracted substring.\
+\
+    // === CONSTANTS ===\
+    var nBits = 16;\
+    signal ltChar <== 60; // '<'\
+    signal gtChar <== 62; // '>'\
+    \
+    // The item to search for is now a hardcoded constant: "from:"\
+    assert(maxItemLen >= 5);\
+    var item[maxItemLen];\
+    var itemLen = 5;\
+    item[0] = 102; // f\
+    item[1] = 114; // r\
+    item[2] = 111; // o\
+    item[3] = 109; // m\
+    item[4] = 58;  // :\
+    for (var i = 5; i < maxItemLen; i++) \{\
+        item[i] = 0; // Pad with zeros\
+    \}\
+\
+    // ---\
+    // STAGE 1: Find the first occurrence of the `item` subarray ("from:").\
+    // ---\
+    component isSubarray[maxSliceLen];\
+    for (var i = 0; i < maxSliceLen; i++) \{\
+        isSubarray[i] = SubArrayEquals(maxItemLen);\
+        isSubarray[i].len <== itemLen;\
+        for (var j = 0; j < maxItemLen; j++) \{\
+            isSubarray[i].slice[j] <== (i + j < maxSliceLen) ? header[i + j] : 0;\
+            isSubarray[i].sub[j] <== item[j];\
+        \}\
+    \}\
+    \
+    signal firstMatchFlag[maxSliceLen];\
+    signal matchFoundSoFar[maxSliceLen + 1];\
+    matchFoundSoFar[0] <== 0;\
+    for (var i = 0; i < maxSliceLen; i++) \{\
+        firstMatchFlag[i] <== isSubarray[i].out * (1 - matchFoundSoFar[i]);\
+        matchFoundSoFar[i+1] <== matchFoundSoFar[i] + firstMatchFlag[i];\
+    \}\
+\
+    signal itemFound <== matchFoundSoFar[maxSliceLen];\
+    signal itemIndex <== 0;\
+    for (var i = 0; i < maxSliceLen; i++) \{\
+        itemIndex += i * firstMatchFlag[i];\
+    \}\
+    signal searchStart <== itemIndex + itemLen;\
+\
+    // ---\
+    // STAGE 2: Find the index of the first '<' at or after `searchStart`.\
+    // ---\
+    component isLtChar[maxSliceLen];\
+    component isAfterItem[maxSliceLen];\
+    signal firstLtFlag[maxSliceLen];\
+    signal ltFoundSoFar[maxSliceLen + 1];\
+    ltFoundSoFar[0] <== 0;\
+\
+    for (var i = 0; i < maxSliceLen; i++) \{\
+        isLtChar[i] = IsEqual();\
+        isLtChar[i].in[0] <== header[i];\
+        isLtChar[i].in[1] <== ltChar;\
+\
+        isAfterItem[i] = LessThan(nBits);\
+        isAfterItem[i].in[0] <== searchStart - 1;\
+        isAfterItem[i].in[1] <== i; // i >= searchStart\
+\
+        signal searchActive <== itemFound * isAfterItem[i].out;\
+        firstLtFlag[i] <== isLtChar[i].out * searchActive * (1 - ltFoundSoFar[i]);\
+        ltFoundSoFar[i+1] <== ltFoundSoFar[i] + firstLtFlag[i];\
+    \}\
+    signal ltFound <== ltFoundSoFar[maxSliceLen];\
+    signal ltIndex <== 0;\
+    for (var i=0; i<maxSliceLen; i++) \{ ltIndex += i * firstLtFlag[i]; \}\
+    signal fromIndex <== ltIndex + 1;\
+    \
+    // ---\
+    // STAGE 3: Find the index of the first '>' at or after `ltIndex`.\
+    // ---\
+    component isGtChar[maxSliceLen];\
+    component isAfterLt[maxSliceLen];\
+    signal firstGtFlag[maxSliceLen];\
+    signal gtFoundSoFar[maxSliceLen + 1];\
+    gtFoundSoFar[0] <== 0;\
+    \
+    for (var i = 0; i < maxSliceLen; i++) \{\
+        isGtChar[i] = IsEqual();\
+        isGtChar[i].in[0] <== header[i];\
+        isGtChar[i].in[1] <== gtChar;\
+\
+        isAfterLt[i] = LessThan(nBits);\
+        isAfterLt[i].in[0] <== ltIndex;\
+        isAfterLt[i].in[1] <== i + 1; // i >= ltIndex\
+        \
+        signal searchActive <== ltFound * isAfterLt[i].out;\
+        firstGtFlag[i] <== isGtChar[i].out * searchActive * (1 - gtFoundSoFar[i]);\
+        gtFoundSoFar[i+1] <== gtFoundSoFar[i] + firstGtFlag[i];\
+    \}\
+    signal gtFound <== gtFoundSoFar[maxSliceLen];\
+    signal toIndex <== 0;\
+    for (var i=0; i<maxSliceLen; i++) \{ toIndex += i * firstGtFlag[i]; \}\
+\
+    // ---\
+    // STAGE 4: Extract substring into fixed-size buffer.\
+    // ---\
+    signal allFound <== itemFound * ltFound * gtFound;\
+    component toIsGtFrom = LessThan(nBits);\
+    toIsGtFrom.in[0] <== fromIndex;\
+    toIsGtFrom.in[1] <== toIndex;\
+    signal validIndices <== toIsGtFrom.out;\
+    \
+    signal potentialLen <== toIndex - fromIndex;\
+    signal actualLen <== allFound * validIndices * potentialLen;\
+\
+    component lenIsLeMax = LessThan(nBits);\
+    lenIsLeMax.in[0] <== actualLen;\
+    lenIsLeMax.in[1] <== maxOutputLen + 1;\
+    signal validLen <== lenIsLeMax.out;\
+    \
+    signal outLen <== actualLen * validLen;\
+    \
+    signal extracted[maxOutputLen];\
+    for (var i = 0; i < maxOutputLen; i++) \{\
+        component iIsLtOutLen = LessThan(nBits);\
+        iIsLtOutLen.in[0] <== i;\
+        iIsLtOutLen.in[1] <== outLen;\
+\
+        signal srcIndex <== fromIndex + i;\
+        signal charToSelect <== 0;\
+        for (var j = 0; j < maxSliceLen; j++) \{\
+            component isJEqSrc = IsEqual();\
+            isJEqSrc.in[0] <== srcIndex;\
+            isJEqSrc.in[1] <== j;\
+            charToSelect += isJEqSrc.out * header[j];\
+        \}\
+        extracted[i] <== iIsLtOutLen.out * charToSelect;\
+    \}\
+    \
+    // ---\
+    // STAGE 5: Hash the padded buffer and verify.\
+    // ---\
+    component bytes2bits = Bytes2Bits(maxOutputLen);\
+    for (var i = 0; i < maxOutputLen; i++) \{\
+        bytes2bits.in[i] <== extracted[i];\
+    \}\
+\
+    component hasher = Sha256(maxOutputLen * 8);\
+    for (var i = 0; i < maxOutputLen * 8; i++) \{\
+        hasher.in[i] <== bytes2bits.out[i];\
+    \}\
+\
+    // Assert that the computed hash matches the provided hash.\
+    for (var i = 0; i < 256; i++) \{\
+        gmailHash[i] === hasher.out[i];\
+    \}\
+\}\
+}
