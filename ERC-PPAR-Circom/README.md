@@ -64,7 +64,11 @@ The equality of this headerHash and the previous circuit's headerHash must be do
 - header ([]bytes) : Private
 - headerHash (256-bit integer) : Public
 
-❌ **Not tested. Needs tests** ❌
+**Arguments:** 🔧
+
+- maxHeaderLen: the exact length of header
+
+✅ **Have been tested, happy path works correctly!** ✅
 
 ### body-hash-verify
 
@@ -81,7 +85,11 @@ The equality of body here and the body that is given to the Verifier contract wi
 - header ([]bytes) : Private
 - headerHash (256-bit integer) : Public
 
-❌ **Not tested. Needs tests** ❌
+**Arguments:** 🔧
+
+- maxHeaderLen: the exact length of header
+
+✅ **Have been tested, happy path works correctly!** ✅
 
 ## Email Parser
 
