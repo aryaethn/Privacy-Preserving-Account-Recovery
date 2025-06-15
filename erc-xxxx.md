@@ -6,9 +6,8 @@ discussions-to: https://ethereum-magicians.org/t/onchain-ppar
 status: Draft
 type: Standards Track
 category: ERC
-requires: 7702, 2537, 4337, 7864
+requires: 7702, 4337
 created: 2025-06-13
-license: CC0
 ---
 
 ## Abstract
