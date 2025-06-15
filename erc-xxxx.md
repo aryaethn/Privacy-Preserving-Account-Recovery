@@ -1,34 +1,23 @@
 ---
-eip: <to-be-assigned>  
-title: On-Chain Privacy-Preserving Account Recovery  
-author: Arya, Ardeshir, Hosein
-discussions-to: <Ethereum Magicians thread link>  
-status: Draft  
-type: Standards Track  
-category: ERC  
-requires: 7702, 2537, 4337, 7864  
-created: 2025-06-13  
----
-
-## Table of Contents
-
-- [Abstract](#abstract)  
-- [Motivation](#motivation)  
-- [Specification](#specification)  
-- [Rationale](#rationale)  
-- [Security Considerations](#security-considerations)  
-- [Backwards Compatibility](#backwards-compatibility)  
-- [Reference Implementation](#reference-implementation)  
-- [Copyright](#copyright)  
-- [References](#references)
-
+eip: 0
+title: On-Chain Privacy-Preserving Account Recovery
+author:
+  - Arya <arya@example.com>
+  - Ardeshir <ardeshir@example.com>
+  - Hosein <hosein@example.com>
+discussions-to: https://ethereum-magicians.org/t/onchain-ppar
+status: Draft
+type: Standards Track
+category: ERC
+requires: 7702, 2537, 4337, 7864
+created: 2025-06-13
+license: CC0
 ---
 
 ## Abstract
 
-This ERC standardizes a privacy-preserving, on-chain method for account recovery based on zero-knowledge proofs and optionally two-factor authentication. Unlike traditional social recovery schemes, it enables users to rotate keys using secrets (e.g., passwords or Gmail access) without revealing guardian identities or leaking recovery metadata on-chain. This standard provides an interface for storing recovery parameters, verifying zero-knowledge proofs, and rotating the key of an EOA or smart account in accordance with EIP-7702.
+<--TODO-->
 
----
 
 ## Motivation
 
@@ -64,9 +53,12 @@ This ERC standardizes a privacy-preserving, on-chain method for account recovery
 
 ## Specification
 
-> **Scope and Intent** – This ERC defines interfaces, data structures, and expected behavior for privacy-preserving recovery. It does not prescribe exact implementations, proof systems, or verifier bytecode.
+### Terminology and RFC 2119
 
-### 1. Shared Cryptographic Conventions
+* **MUST**, **SHALL**, **SHOULD**, etc. are per RFC 2119.  
+* “Implementer” denotes any contract or circuit author building to this ERC.
+
+### Shared Cryptographic Conventions
 
 | Symbol | Meaning |
 |--------|---------|
@@ -76,224 +68,122 @@ This ERC standardizes a privacy-preserving, on-chain method for account recovery
 
 ---
 
-### 2. Guardian Contract
-
-#### 2.1 Storage
+### Storage (Guardian)
 
 ```solidity
-mapping(address => bytes32) passwordHash;
-mapping(address => bytes32) gmailHash;
-mapping(address => uint8) recoveryMode; // 0 = none, 1 = password, 2 = gmail, 3 = 2FA
+mapping(address => bytes32) public passwordHash;
+mapping(address => bytes32) public emailAddressHash;
+mapping(address => uint8)   public recoveryMode; // 0 = none, 1 = password, 2 = gmail, 3 = 2FA
 ```
 
-#### 2.2 Methods
+### Guardian — External Functions
 
 ```solidity
-function storePassword(bytes32 hash) external;
-function storeGmail(bytes32 hash) external;
-function setRecoveryMode(uint8 mode) external;
+function storePassword(address protectedAccount, bytes32 _hash) external;
 ```
 
-- msg.sender is always the protected account.
-- Overwrites allowed. Passing 0x00…00 deletes entries.
-
-#### 2.3 Events
+- **MUST** revert unless `msg.sender == protectedAccount`.
+- Passing 0x00…00 as the `_hash` deletes the entry.
+- **MUST** emit `PasswordStored`.
 
 ```solidity
-event PasswordStored(address indexed protected, bytes32 hash);
-event GmailStored(address indexed protected, bytes32 hash);
-event RecoveryModeSet(address indexed protected, uint8 mode);
+function storeEmailAddress(address protectedAccount, bytes32 _hash) external;
+function setRecoveryMode(address protectedAccount, uint8 _mode) external;
 ```
 
-### 3. Verifier Contract
+- **MUST** revert unless `msg.sender == protectedAccount`.
+- _mode **MUST** be one of 0, 1, 2, 3; otherwise revert.
+- Each function **MUST** emit its corresponding event.
 
-#### 3.1 Method
+### Guardian Events
+
+```solidity
+event PasswordStored(address indexed protectedAccount, bytes32 hash);
+event GmailStored(address indexed protectedAccount, bytes32 hash);
+event RecoveryModeSet(address indexed protectedAccount, uint8 mode);
+```
+
+### Verifier — External Function
 
 ```solidity
 function recover(
-    bytes32 blobCommitment,
-    address protected,
+    bytes32 blobCommitment,  // MAY be 0x0 for calldata-only submissions
+    address protectedAccount,
     address newSigner,
-    bytes publicWitnesses
+    bytes   publicWitnesses, // ABI-encoded, free-form
+    bytes   proof            // zk-proof bytes
 ) external;
 ```
 
-- publicWitnesses contains all public inputs, including passwordHash, gmailHash, protected, newSigner.
-- Must match Guardian.recoveryMode.
+#### Implementations MUST:
+1.	Read Guardian.recoveryMode(protectedAccount) and **MUST** reject proofs
+inconsistent with that mode.
+2.	Decode `publicWitnesses` as specified by the implementer’s circuit.
+3.	For every non-zero hash field in `publicWitnesses`, **MUST** assert equality
+with the corresponding Guardian storage value.
+4.	**MUST** validate proof.
+5.	If `blobCommitment == 0x0`, all proof data **MUST** be supplied in
+`calldata`; otherwise the contract **MUST** verify that the supplied
+commitment matches the blob per EIP-4844 § 4.1.
+6.	On success **MUST** emit `ProofVerified` and invoke `rotateKey`.
+7.	**MUST** revert on any failure.
 
-#### 3.2 Internal Method (abstract)
+### Internal rotateKey
 
 ```solidity
-function rotateKey(address protected, address newSigner) internal;
-// TODO: Define exact temporary code logic for EIP-7702 deployment
+function rotateKey(address protectedAccount, address newSigner) internal;
+// <--TODO-->: Define exact temporary code logic for EIP-7702 deployment
 ```
+> Note: the exact EIP-7702 key-replacement procedure is implementation
+specific and intentionally left undefined in this ERC.
 
-#### 3.3 Events
+### Verifier Events
 
 ```solidity
-event ProofVerified(bytes32 indexed blobCommitment, address indexed protected);
-event KeyRotated(address indexed protected, address indexed newSigner);
+event ProofVerified(bytes32 indexed blobCommitment, address indexed protectedAccount);
+event KeyRotated(address indexed protectedAccount, address indexed newSigner);
 ```
 
-### 4. Off-Chain Proof Requirements
+### Off-Chain Proof Requirements
 
 | Mode     | Circuit Must Prove                                                               |
 |----------|----------------------------------------------------------------------------------|
 | Password | `H(pad(password)) == passwordHash`                                               |
-| Gmail    | Google JWT or DKIM signed token proves email; `H(pad(gmail)) == gmailHash`       |
+| Gmail    | JWT token or DKIM signed token proves email; `H(pad(emaiAddress)) == emailAddressHash`       |
 | 2FA      | Both of the above                                                                |
 
-A reference circuit for Gmail JWT and DKIM proofs is available at [GitHub Link].
+The implementer **MUST** ensure that:
+	•	The on-chain hash function equals the one used inside the circuit.
+	•	Each authentication factor proven in the circuit corresponds to the chosen
+recoveryMode.
+	•	Additional fields (expiry, rate-limit flags, etc.) **MAY** be included in
+`publicWitnesses` at the implementer’s discretion.
 
-### 5. Events Summary
-
-| Contract | Event Name         |
-|----------|--------------------|
-| Guardian | `PasswordStored`   |
-| Guardian | `GmailStored`      |
-| Guardian | `RecoveryModeSet`  |
-| Verifier | `ProofVerified`    |
-| Verifier | `KeyRotated`       |
-
-### 6. Gas & Size Guidelines (Informative)
-
-| Operation           | Target Gas   | Notes                            |
-|---------------------|--------------|----------------------------------|
-| Guardian store      | < 40,000     |                                  |
-| Verifier + rotation | ≤ 1,000,000  | Includes full zk-SNARK check     |
-| Blob size           | ≤ 128 KB     | 1 blob (EIP-4844)                |
-
-### 7. Non-Goals
-
-- No off-chain key escrow.
-- No multi-guardian or threshold logic.
-- No required hash function or zk-proof backend.
-- No specific bytecode for Verifier or Guardian.
+A reference circuit for Gmail DKIM proofs is available at [GitHub Link].
 
 ## Rationale
 
-### 1. Separation of Concerns
-
-| Layer  |	Responsibility |	Why This Matters |
-|--------|-----------------|-------------------|
-| Guardian |	Pure data registry (hashes + mode) |	Keeps state minimal (3 × mapping) and gas-cheap. Updates are idempotent; no proof logic inside. |
-| Verifier |	Heavy cryptography + key rotation |	Isolates expensive verification from the lightweight registry, letting alternative proof systems plug in later without touching stored data.|
-
-### 2. Indexing by Protected Address
-
-The mappings use protected (not guardian) as the key so that:
-	1.	Self-service UX: The owner (or their wallet UI) can call storePassword/storeGmail directly without first designating a separate guardian contract.
-	2.	Privacy: No guardian public key or address ever appears on-chain.
-	3.	Gas efficiency: One mapping entry per account avoids N-out-of-M storage footprints.
-
-### 3. Hash-Only Storage
-
-Storing H(pad(secret)) rather than an encrypted secret avoids key-management complexities and leaks no entropy if the registry is hacked. A deterministic padding rule ensures identical pre-images across off-chain and on-chain code.
-
-### 4. Single Guardian, Optional 2-Factor
-
-Early iterations considered threshold (N-of-M) guardians but were rejected for v1:
-	•	Adds multi-scalar multiplication to the circuit → higher gas and proof size.
-	•	Most real-world “lost key” stories involve a sole holder rather than multi-sig.
-The standard explicitly leaves multi-guardian extensions to a future ERC.
-
-### 5. Recovery Mode Flag
-
-Encoding the chosen factor(s) in on-chain state (recoveryMode) lets wallets display the active security posture and allows the Verifier to reject mismatched proofs before expensive pairing checks.
-
-### 6. Choice of EIP Dependencies
-
-•	EIP-7702 – Provides a canonical route to replace an EOA’s signing key without migrating funds or replaying approvals.
-•	EIP-2537 (BLS precompiles) – Optional optimisations for BLS-based proof systems (e.g., Plonkish curves).
-•	EIP-7864 (Unified Binary Tree) – Makes inclusion proofs cheap if future versions store hashes inside account storage proofs.
-•	EIP-4844 – Blob space lowers calldata costs; KZG commitments let the Verifier confirm availability cheaply.
-
-### 7. Proof System Agnosticism
-
-Groth16 is cited only as a benchmark because:
-	•	On mainnet today it remains the cheapest verifier (<500 k gas without recursion).
-	•	It supports structured-reference string ceremonies that many ZK vendors already run.
-However, the ERC words all MUST-level statements in terms of “a zk-proof verifier” so Plonk/KZG or Stark-friendly implementations remain conformant.
-
-### 8. publicWitnesses Vector
-
-A bytes-encoded witness list avoids ABI re-specification each time an implementation tweaks circuit parameters or inserts new rate-limit fields.  It preserves forward compatibility while retaining explicit hashing checks by the Verifier.
-
-### 9. Events for Indexers
-
-Standardised events (PasswordStored, KeyRotated, …) let explorers or custodial dashboards track security-posture changes.  Because no plaintext secret is emitted, on-chain privacy is preserved.
-
-### 10. Gas Targets (Informative Only)
-
-The ≤1 M gas budget was chosen because:
-	•	It is ~1% of a post-Dencun 30 M gas block—unlikely to starve block space.
-	•	Benchmarks show Groth16 verifiers fit comfortably (<450 k) leaving head-room for rotateKey.
-	•	It creates an implicit cap that encourages implementers to optimise circuit size.
-
-### 11. Non-Goals Clarified
-
-•	No off-chain key escrow – custodial recovery solutions already exist.
-•	No social-graph disclosure – zero guardian addresses intentionally appear on-chain.
-•	No contract upgrade pattern mandated – the standard defines interfaces, not proxy layouts.
-
-### 12. Compatibility & Future Work
-
-The design consciously mirrors ERC-4337 “social recovery” semantics (same intent, different privacy model) so wallet developers can add PPAR with minimal UI changes. Future extensions may include:
-	1.	N-of-M guardian thresholds.
-	2.	Post-quantum hash and proof curves.
-	3.	Additional factors (e.g., hardware attestation) encoded via extra publicWitnesses.
+•	Minimal Surface – The ERC standardises only what is needed for
+interoperability: storage keys, function names, required checks, and event
+emissions.
+•	Flexibility – Implementers select their preferred hash, proof system,
+and witness encoding, provided contract and circuit agree.
+•	Privacy – No guardian addresses or signatures appear on chain.
 
 
 ## Security Considerations
 
-### 1. On-Chain Registry Threats
-
-| Risk |	Mitigation |
-|--|--|
-| Hash-collision or second-preimage attacks against H(⋅) |	Implementations MUST choose a hash with ≥128-bit collision resistance (e.g., keccak256, Poseidon on BN254) and document it.|
-| Dictionary attacks on passwordHash or gmailHash (hashes are public) |	Wallet UIs SHOULD enforce minimum entropy (e.g., 12 chars, mixed case) or encourage password managers; padding to 32 bytes eliminates length leakage.|
-| Unauthorized registry updates |	Only msg.sender may call storePassword / storeGmail / setRecoveryMode; callers pay gas, discouraging grief attacks on others’ entries.|
-| Race/overwrite griefing by malware on the holder’s device |	Users should store secrets off-chain before broadcasting a registry update; overwrites emit events that monitoring tools can flag.|
-
-### 2. Proof Forgery & Verification
-
-| Risk	| Mitigation|
-|--|--|
-| Forged zk-proof |	Soundness relies on the chosen proof system (e.g., Groth16); implementers MUST verify all pairing equations and check that publicWitnesses exactly match the Guardian hashes.|
-| Blob unavailability / DA failure	| The Verifier only needs the commitment; proof bytes are supplied in the same transaction calldata for L1 re-validation or stored in the blob. Validators who do not download the blob will reject the transaction, preventing key rotation without data availability.|
-| Public-input substitution	| The contract cross-checks that passwordHash / gmailHash decoded from publicWitnesses equal Guardian storage before verifying, preventing an attacker from constructing a valid proof for the wrong account.|
-| Replay of old proofs |	newSigner is part of the public inputs; after a successful rotation it becomes authorised and any second execution with the same newSigner is idempotent. Implementations MAY add an expiry timestamp to publicWitnesses if stronger freshness guarantees are desired.|
-
-### 3. 2-Factor Gmail Path
-
-| Risk |	Mitigation|
-|--|--|
-| Compromised Google account after rotation |	Recovery can be re-disabled by setting recoveryMode = 0 once access is restored; users should follow standard OPSEC (2FA, hardware keys) on Gmail itself.|
-| Cryptographic downgrade (e.g., weak RSA key)	| Circuits MUST verify the JWT’s kid and signature against a pinned modulus list or fetch Google’s JWKS set.|
-| Clock skew / token expiry	| Circuits SHOULD include iat/exp checks and enforce a ≤5 min window.|
-
-### 4. Key-Rotation Logic
-
-•	rotateKey is internal and only reachable after proof verification, preventing arbitrary callers from installing a new signer.
-•	The exact EIP-7702 flow is marked ⟨TODO⟩; auditors MUST confirm that the deployed temporary code cannot be replayed or self-destructed to roll back the signer set.
-
-### 5. Denial-of-Service & Gas
-	
-Verifier gas target (≤1 M) leaves head-room in a 30 M block; nevertheless, miners or blob markets could censor recovery txs. Users SHOULD keep secondary recovery avenues (e.g., social recovery) until confirmations settle.
+•	Implementers **SHOULD** choose a collision-resistant hash (≥ 256-bit).
+•	The Verifier’s cross-check between publicWitnesses and Guardian storage
+prevents public-input substitution.
+•	Replay attacks are mitigated when `newSigner` becomes authorised; proofs are
+idempotent thereafter.
+•	If blobs are used, data-availability rules of EIP-4844 apply.
 
 ## Backwards Compatibility
 
-1.	No protocol-layer changes: The ERC is a voluntary application-layer standard; nodes, consensus rules, and pre-existing contracts remain unaffected.
-2.	EOA & Smart-Wallet Co-existence.
-	  •	An account that never opts in to PPAR behaves exactly as before—no Guardian entry, no extra gas costs.
-	  •	Wallets may adopt PPAR incrementally; the registry and Verifier interfaces do not conflict with ERC-4337 or multisig recovery schemes.
-3.	EIP Dependencies Are Additive.
-	  •	EIP-7702 is leveraged only when rotation occurs; non-participating EOAs are untouched.
-	  •	Use of EIP-4844 blobs is optional for non-rollup transactions; legacy calldata-only submissions still verify.
-4.	Event Topics Preserve Explorer Compatibility: New events (PasswordStored, KeyRotated, etc.) use unique selectors and do not collide with existing widely-used ones, ensuring indexers can integrate without filtering ambiguity.
-5.	Forward Compatibility: The publicWitnesses byte array and generic hash function placeholders allow future implementations (e.g., STARKs, post-quantum hashes) without changing function signatures or storage layout.
-
-No known backwards-compatibility risks have been identified.
+The ERC is purely application-layer; no consensus changes.  Accounts that
+never write to the Guardian contract behave exactly as before.
 
 ## Reference Implementation
 
@@ -304,11 +194,3 @@ A reference implementation (Guardian, Verifier contracts, proof circuits includi
 ## Copyright
 
 Copyright and related rights waived via [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/).
-
-## References
-
-- [EIP-7702: Temporary Account Contract Code](https://eips.ethereum.org/EIPS/eip-7702)  
-- [EIP-2537: BLS12-381 Precompile](https://eips.ethereum.org/EIPS/eip-2537)  
-- [EIP-4337: Account Abstraction](https://eips.ethereum.org/EIPS/eip-4337)  
-- [EIP-7864: Unified Binary Tree](https://eips.ethereum.org/EIPS/eip-7864)  
-- [EIP-4844: Shard Blob Transactions](https://eips.ethereum.org/EIPS/eip-4844)
