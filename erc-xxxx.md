@@ -1,10 +1,7 @@
 ---
 eip: 0
 title: On-Chain Privacy-Preserving Account Recovery
-author:
-  - Arya <arya@example.com>
-  - Ardeshir <ardeshir@example.com>
-  - Hosein <hosein@example.com>
+author: Arya <arya@example.com>, Ardeshir <ardeshir@example.com>, Hosein <hosein@example.com>
 discussions-to: https://ethereum-magicians.org/t/onchain-ppar
 status: Draft
 type: Standards Track
