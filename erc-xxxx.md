@@ -1,6 +1,6 @@
 ---
 eip: 0
-title: On-Chain Privacy-Preserving Account Recovery
+title: ZK Privacy-Preserving Account Recovery
 author: Aryaethn <aryaethn@gmail.com>, 4rdiii <agh1994@gmail.com>, Hosein <hosein@example.com>
 discussions-to: https://ethereum-magicians.org/t/onchain-ppar
 status: Draft
@@ -17,7 +17,7 @@ created: 2025-06-13
 
 ## Motivation
 
-### 1. Key Loss Is Chronic and Costly  
+### Key Loss Is Chronic and Costly  
 - **Irrecoverable asset loss is endemic.**  
   On-chain forensics estimate **≈20% of all Bitcoin (2.3–3.7 M BTC)** and **≥0.5% of all Ether (≈636k ETH)** are permanently inaccessible due to lost private keys, contract bugs, or forgotten seed phrases.  
   At 2025 market prices, this equates to **tens of billions of USD** in stranded value—capital that can never circulate, invest, or be taxed.
@@ -25,25 +25,18 @@ created: 2025-06-13
 - **Economic side-effects.**  
   A shrinking effective supply introduces unplanned deflationary pressure and complicates monetary modelling. High-profile losses erode user confidence and slow mainstream adoption.
 
-### 2. Existing Recovery Schemes Leak Privacy  
+### Existing Recovery Schemes Leak Privacy  
 | Approach                      | Drawbacks                                                                                     |
 |------------------------------|-----------------------------------------------------------------------------------------------|
 | Off-chain seed backups       | Susceptible to physical theft, phishing, and coercion.                                       |
 | ERC-4337-style social recovery | Guardian identities and signatures are visible on-chain, exposing social graph data.        |
 | Custodial recovery           | Re-introduces trusted intermediaries, undermining self-custody.                              |
 
-### 3. Why a New ERC Is Needed  
+### Why a New ERC Is Needed  
 1. **On-chain, self-custodial recovery** must preserve privacy while integrating with existing Ethereum account models.  
 2. **Zero-knowledge proofs** now allow proving knowledge of recovery secrets without revealing them.  
 3. **EIP-7702 and EIP-7864** make cost-effective, succinct account modification feasible.  
 4. A **standard interface** is required to ensure wallet and verifier interoperability.
-
-### 4. Goals of This ERC  
-- **Privacy:** No guardian addresses, signatures, or secrets are exposed.  
-- **Interoperability:** Compatible with EOAs, ERC-4337 smart wallets, and EIP-7702.  
-- **Auditability:** Stateless verification and canonical public inputs.  
-- **Cost Efficiency:** On-chain verification ≤ 1M gas; 1 blob or minimal calldata.  
-- **Extensibility:** Supports 2FA, flexible proof schemes, and Gmail-based flows.
 
 ---
 
@@ -51,7 +44,7 @@ created: 2025-06-13
 
 ### Terminology and RFC 2119
 
-* **MUST**, **SHALL**, **SHOULD**, etc. are per RFC 2119.  
+* **MUST**, **MAY**, **SHOULD**, etc. are per RFC 2119.  
 * “Implementer” denotes any contract or circuit author building to this ERC.
 
 ### Shared Cryptographic Conventions
@@ -95,7 +88,7 @@ function setRecoveryMode(address protectedAccount, uint8 _mode) external;
 
 ```solidity
 event PasswordStored(address indexed protectedAccount, bytes32 hash);
-event GmailStored(address indexed protectedAccount, bytes32 hash);
+event EmailAddressStored(address indexed protectedAccount, bytes32 hash);
 event RecoveryModeSet(address indexed protectedAccount, uint8 mode);
 ```
 
@@ -111,7 +104,7 @@ function recover(
 ) external;
 ```
 
-#### Implementations MUST:
+#### Implementations **MUST**:
 1.	Read Guardian.recoveryMode(protectedAccount) and **MUST** reject proofs
 inconsistent with that mode.
 2.	Decode `publicWitnesses` as specified by the implementer’s circuit.
@@ -128,15 +121,20 @@ commitment matches the blob per EIP-4844 § 4.1.
 
 ```solidity
 function rotateKey(address protectedAccount, address newSigner) internal;
-// <--TODO-->: Define exact temporary code logic for EIP-7702 deployment
 ```
-> Note: the exact EIP-7702 key-replacement procedure is implementation
-specific and intentionally left undefined in this ERC.
+
+#### Implementations **MUST**:
+1. 	Read the `msg.sender`, and revert if `msg.sender` is not equal to
+`newSigner`.
+2.	For EOA `protectedAccount` that adheres to EIP-7702, add the `newSigner` as
+the new signer of the `protectedAccount`, with respect to the EIP-7702 specification rules.
+3. 	For EIP-4337 `protectedAccount`, add the `newSigner` as the new signer of
+the `protectedAccount`, with respect to the EIP-4337 specification rules.
 
 ### Verifier Events
 
 ```solidity
-event ProofVerified(bytes32 indexed blobCommitment, address indexed protectedAccount);
+event ProofVerified(bytes32 indexed blobCommitment, bytes indexed publicWitnesses, bytes indexed proof, address indexed protectedAccount);
 event KeyRotated(address indexed protectedAccount, address indexed newSigner);
 ```
 
@@ -145,7 +143,7 @@ event KeyRotated(address indexed protectedAccount, address indexed newSigner);
 | Mode     | Circuit Must Prove                                                               |
 |----------|----------------------------------------------------------------------------------|
 | Password | `H(pad(password)) == passwordHash`                                               |
-| Gmail    | JWT token or DKIM signed token proves email; `H(pad(emaiAddress)) == emailAddressHash`       |
+| Email Address    | JWT token or DKIM signed token proves email; `H(pad(emaiAddress)) == emailAddressHash`       |
 | 2FA      | Both of the above                                                                |
 
 The implementer **MUST** ensure that:
@@ -155,7 +153,7 @@ recoveryMode.
 	•	Additional fields (expiry, rate-limit flags, etc.) **MAY** be included in
 `publicWitnesses` at the implementer’s discretion.
 
-A reference circuit for Gmail DKIM proofs is available at [GitHub Link].
+A reference circuit for Gmail DKIM proofs is available at <--TODO-->.
 
 ## Rationale
 
@@ -183,9 +181,9 @@ never write to the Guardian contract behave exactly as before.
 
 ## Reference Implementation
 
-A reference implementation (Guardian, Verifier contracts, proof circuits including Gmail JWT & DKIM) is available at:
+A reference implementation (Guardian, Verifier contracts, proof circuits including Gmail DKIM signature) is available at:
 
-- [https://github.com/your-org/onchain-ppar](https://github.com/your-org/onchain-ppar) <--TODO-->
+- <--TODO-->
 
 ## Copyright
 
