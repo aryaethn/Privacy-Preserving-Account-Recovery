@@ -6,7 +6,7 @@ discussions-to: https://ethereum-magicians.org/t/onchain-ppar
 status: Draft
 type: Standards Track
 category: ERC
-requires: 7702, 4337
+requires: 7702, 4337, 4844
 created: 2025-06-13
 ---
 
@@ -41,8 +41,7 @@ ERC-4337 smart accounts.
 ### Why a New ERC Is Needed  
 1. **On-chain, self-custodial recovery** must preserve privacy while integrating with existing Ethereum account models.  
 2. **Zero-knowledge proofs** now allow proving knowledge of recovery secrets without revealing them.  
-3. **EIP-7702 and EIP-7864** make cost-effective, succinct account modification feasible.  
-4. A **standard interface** is required to ensure wallet and verifier interoperability.
+3. A **standard interface** is required to ensure wallet and verifier interoperability.
 
 ---
 
