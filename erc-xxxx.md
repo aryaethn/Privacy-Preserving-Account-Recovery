@@ -12,7 +12,13 @@ created: 2025-06-13
 
 ## Abstract
 
-<--TODO-->
+This ERC standardises an interface that enables Ethereum accounts to rotate
+their signing key by presenting a zero-knowledge proof (ZKP) of knowledge of
+one or more private recovery factors (password, e-mail account, or both) while
+leaking **no** guardian identities or social-graph metadata on-chain.  The
+specification defines a lightweight *Guardian* registry for factor hashes and
+a *Verifier* contract that authorises key rotation for EOAs (EIP-7702) and
+ERC-4337 smart accounts.
 
 
 ## Motivation
@@ -62,7 +68,7 @@ created: 2025-06-13
 ```solidity
 mapping(address => bytes32) public passwordHash;
 mapping(address => bytes32) public emailAddressHash;
-mapping(address => uint8)   public recoveryMode; // 0 = none, 1 = password, 2 = gmail, 3 = 2FA
+mapping(address => uint8)   public recoveryMode; // 0 = none, 1 = password, 2 = emailAddress, 3 = 2FA
 ```
 
 ### Guardian — External Functions
@@ -73,7 +79,7 @@ function storePassword(address protectedAccount, bytes32 _hash) external;
 
 - **MUST** revert unless `msg.sender == protectedAccount`.
 - Passing 0x00…00 as the `_hash` deletes the entry.
-- **MUST** emit `PasswordStored`.
+- **MUST** emit `PasswordStored` on success.
 
 ```solidity
 function storeEmailAddress(address protectedAccount, bytes32 _hash) external;
@@ -82,7 +88,7 @@ function setRecoveryMode(address protectedAccount, uint8 _mode) external;
 
 - **MUST** revert unless `msg.sender == protectedAccount`.
 - _mode **MUST** be one of 0, 1, 2, 3; otherwise revert.
-- Each function **MUST** emit its corresponding event.
+- Each function **MUST** emit its corresponding event on success.
 
 ### Guardian Events
 
@@ -114,7 +120,7 @@ with the corresponding Guardian storage value.
 5.	If `blobCommitment == 0x0`, all proof data **MUST** be supplied in
 `calldata`; otherwise the contract **MUST** verify that the supplied
 commitment matches the blob per EIP-4844 § 4.1.
-6.	On success **MUST** emit `ProofVerified` and invoke `rotateKey`.
+6.	On success, **MUST** emit `ProofVerified` and invoke `rotateKey`.
 7.	**MUST** revert on any failure.
 
 ### Internal rotateKey
@@ -124,17 +130,16 @@ function rotateKey(address protectedAccount, address newSigner) internal;
 ```
 
 #### Implementations **MUST**:
-1. 	Read the `msg.sender`, and revert if `msg.sender` is not equal to
-`newSigner`.
-2.	For EOA `protectedAccount` that adheres to EIP-7702, add the `newSigner` as
+1.	For EOA `protectedAccount` that adheres to EIP-7702, add the `newSigner` as
 the new signer of the `protectedAccount`, with respect to the EIP-7702 specification rules.
-3. 	For EIP-4337 `protectedAccount`, add the `newSigner` as the new signer of
+2. 	For EIP-4337 `protectedAccount`, add the `newSigner` as the new signer of
 the `protectedAccount`, with respect to the EIP-4337 specification rules.
+3. 	On success, **MUST** emit `KeyRotated`. 
 
 ### Verifier Events
 
 ```solidity
-event ProofVerified(bytes32 indexed blobCommitment, bytes indexed publicWitnesses, bytes indexed proof, address indexed protectedAccount);
+event ProofVerified(address indexed protectedAccount);
 event KeyRotated(address indexed protectedAccount, address indexed newSigner);
 ```
 
@@ -153,7 +158,7 @@ recoveryMode.
 	•	Additional fields (expiry, rate-limit flags, etc.) **MAY** be included in
 `publicWitnesses` at the implementer’s discretion.
 
-A reference circuit for Gmail DKIM proofs is available at <--TODO-->.
+A reference circuit for Gmail DKIM signature proofs is available at <--TODO-->.
 
 ## Rationale
 
@@ -167,7 +172,7 @@ and witness encoding, provided contract and circuit agree.
 
 ## Security Considerations
 
-•	Implementers **SHOULD** choose a collision-resistant hash (≥ 256-bit).
+•	Implementers **SHOULD** choose a collision-resistant hash (≥ 128-bit).
 •	The Verifier’s cross-check between publicWitnesses and Guardian storage
 prevents public-input substitution.
 •	Replay attacks are mitigated when `newSigner` becomes authorised; proofs are
