@@ -151,32 +151,32 @@ event KeyRotated(address indexed protectedAccount, address indexed newSigner);
 | 2FA      | Both of the above                                                                |
 
 The implementer **MUST** ensure that:
-	•	The on-chain hash function equals the one used inside the circuit.
-	•	Each authentication factor proven in the circuit corresponds to the chosen
+-	The on-chain hash function equals the one used inside the circuit.
+-	Each authentication factor proven in the circuit corresponds to the chosen
 recoveryMode.
-	•	Additional fields (expiry, rate-limit flags, etc.) **MAY** be included in
+-	Additional fields (expiry, rate-limit flags, etc.) **MAY** be included in
 `publicWitnesses` at the implementer’s discretion.
 
 A reference circuit for Gmail DKIM signature proofs is available at <--TODO-->.
 
 ## Rationale
 
-•	Minimal Surface – The ERC standardises only what is needed for
+-	Minimal Surface – The ERC standardises only what is needed for
 interoperability: storage keys, function names, required checks, and event
 emissions.
-•	Flexibility – Implementers select their preferred hash, proof system,
+-	Flexibility – Implementers select their preferred hash, proof system,
 and witness encoding, provided contract and circuit agree.
-•	Privacy – No guardian addresses or signatures appear on chain.
+-	Privacy – No guardian addresses or signatures appear on chain.
 
 
 ## Security Considerations
 
-•	Implementers **SHOULD** choose a collision-resistant hash (≥ 128-bit).
-•	The Verifier’s cross-check between publicWitnesses and Guardian storage
+-	Implementers **SHOULD** choose a collision-resistant hash (≥ 128-bit).
+-	The Verifier’s cross-check between publicWitnesses and Guardian storage
 prevents public-input substitution.
-•	Replay attacks are mitigated when `newSigner` becomes authorised; proofs are
+-	Replay attacks are mitigated when `newSigner` becomes authorised; proofs are
 idempotent thereafter.
-•	If blobs are used, data-availability rules of EIP-4844 apply.
+-	If blobs are used, data-availability rules of EIP-4844 apply.
 
 ## Backwards Compatibility
 
