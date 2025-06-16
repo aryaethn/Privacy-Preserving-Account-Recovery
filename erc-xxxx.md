@@ -12,13 +12,17 @@ created: 2025-06-13
 
 ## Abstract
 
-This ERC standardises an interface that enables Ethereum accounts to rotate
+Zero-knowledge Privacy-Preserving Account Recovery (zkPPAR) standardises 
+an interface that enables Ethereum accounts to rotate
 their signing key by presenting a zero-knowledge proof (ZKP) of knowledge of
 one or more private recovery factors (password, e-mail account, or both) while
 leaking **no** guardian identities or social-graph metadata on-chain.  The
 specification defines a lightweight *Guardian* registry for factor hashes and
 a *Verifier* contract that authorises key rotation for EOAs (EIP-7702) and
 ERC-4337 smart accounts.
+
+This ERC also provides a minimal implementation of on-chain contracts and 
+off-chain circuits for 2FA mode on Gmail DKIM signature for EOAs. 
 
 
 ## Motivation
