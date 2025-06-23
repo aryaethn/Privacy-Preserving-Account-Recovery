@@ -1,7 +1,7 @@
 ---
 eip: 0
 title: ZK Privacy-Preserving Account Recovery
-author: Aryaethn <aryaethn@gmail.com>, 4rdiii <agh1994@gmail.com>, Hosein <hosein@example.com>
+author: Aryaethn <@aryaethn>, 4rdiii <agh1994@gmail.com>, Hosein <h@example.com>
 discussions-to: https://ethereum-magicians.org/t/onchain-ppar
 status: Draft
 type: Standards Track
