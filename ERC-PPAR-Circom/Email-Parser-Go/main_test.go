@@ -17,6 +17,7 @@ package dkim
 // It does not verify the email signature.                                                //
 //                                                                                        //
 /*----------------------------------------------------------------------------------------*/
+package dkim
 
 	import (
 		"crypto"
@@ -133,7 +134,7 @@ Content-Type: text/html; charset="UTF-8"
 		bh := new(big.Int)
 		sigArray := new(big.Int)
 		header := new(big.Int)
-		headerHash := new(big.Int)
+		headerHash := []byte{}
 		googlePubKeyN := new(big.Int)
 		googlePubKeyE := 0
 		headerHelper := []byte{}
@@ -327,26 +328,72 @@ Content-Type: text/html; charset="UTF-8"
 				return //verif, err
 			}
 			hashed := hasher.Sum(nil) 
-			headerHash = big.NewInt(0).SetBytes(hashed)
+			headerHash = hashed
 
 			
 		}
-		fmt.Println("bh:  (big int)  ", bh)
+
+		headerHelperStr := "["
+		for i, b := range headerHelper {
+			if i > 0 {
+				headerHelperStr += ","
+			}
+			headerHelperStr += "\"" + fmt.Sprintf("%v", b) + "\""
+		}
+		headerHelperStr += "]"
+
+		// Params for signature verify
+		fmt.Println("header:  (bytes)  ", header)
+		//fmt.Println("bh:  (big int)  ", bh)
 		fmt.Println("sigArray:  (big int)  ", sigArray)
-		fmt.Println("headerHash:  (big int)  ", headerHash)	
 		fmt.Println("googlePubKeyN:  (big int)  ", googlePubKeyN)
 		fmt.Println("googlePubKeyE:  (int)  ", googlePubKeyE)
-		fmt.Println("header:  (big int)  ", header)
-		fmt.Println("headerHelper:  (bytes)  ", headerHelper)
+
+		// Params for gmail-hash-verify
+		fmt.Println("header:  (bytes)  ", header)
 		gmail := contains(headerHelper, []byte("from:")[0])
-		fmt.Println("From gmail:  (bytes)  ", gmail)
-		gmailHasher := crypto.SHA256.New()
-		gmailHasher.Write(gmail)
-		gmailHashBytes := gmailHasher.Sum(nil)
-		gmailHash := big.NewInt(0).SetBytes(gmailHashBytes)
-		fmt.Println("gmailHash:  (big int)  ", gmailHash)
+		highIntHash, lowIntHash := prepareHashInput([]byte(gmail))
+		fmt.Println("highIntHash:  (big int)  ", highIntHash)
+		fmt.Println("lowIntHash:  (big int)  ", lowIntHash)
+		//fmt.Println("header:  (big int)  ", headerHelper)
+
+		// Params for header-hash-verify
+		fmt.Println("header:  (bytes)  ", header)
+		fmt.Println("headerHash:  (big int)  ", headerHash)	
+		headerHashHigh := new(big.Int).SetBytes(headerHash[0:16])
+		headerHashLow := new(big.Int).SetBytes(headerHash[16:32])
+		fmt.Println("headerHashHigh:  (big int)  ", headerHashHigh)
+		fmt.Println("headerHashLow:  (big int)  ", headerHashLow)
+
+		// Params for body-hash-verify
+		// <--TODO-->
+
+		// fmt.Println("headerHelper Size:  (int)  ", len(headerHelper))
+		// fmt.Println("headerHelper (formatted):", headerHelperStr)
 		
 
+	}
+
+	func bytesToBits(bytes []byte) []int {
+		bits := make([]int, 0, len(bytes)*8)
+		for _, b := range bytes {
+			for i := 7; i >= 0; i-- {
+				bit := (b >> i) & 1
+				bits = append(bits, int(bit))
+			}
+		}
+		return bits
+	}
+
+	func bigIntToBits(n *big.Int) []uint {
+		words := n.Bits()
+		bits := make([]uint, 0)
+		for _, word := range words {
+			for i := 0; i < n.BitLen(); i++ {
+				bits = append(bits, uint((word>>uint(i))&1))
+			}
+		}
+		return bits
 	}
 
 	func contains(slice []byte, item byte) []byte {
@@ -378,3 +425,16 @@ Content-Type: text/html; charset="UTF-8"
 		return []byte{}
 	}
 
+	func prepareHashInput(message []byte) (*big.Int, *big.Int) {
+		paddedMessage := make([]byte, 32)
+		
+		copy(paddedMessage, message)
+
+		hasher := crypto.SHA256.New()
+		hasher.Write(paddedMessage)
+		hashBytes := hasher.Sum(nil)
+		
+		highInt := new(big.Int).SetBytes(hashBytes[0:16])
+		lowInt := new(big.Int).SetBytes(hashBytes[16:32])
+		return highInt, lowInt
+	}
