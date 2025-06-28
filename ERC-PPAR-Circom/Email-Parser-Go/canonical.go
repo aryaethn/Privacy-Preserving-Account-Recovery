@@ -128,9 +128,10 @@ type relaxedBodyCanonicalizer struct {
 	wsp       bool
 	written   bool
 	crlfFixer crlfFixer
+	canonical []byte
 }
 
-func (c *relaxedBodyCanonicalizer) Write(b []byte) (int, error) {
+func (c *relaxedBodyCanonicalizer) Write(b []byte) ( int, error) {
 	written := len(b)
 
 	b = c.crlfFixer.Fix(b)
@@ -160,13 +161,17 @@ func (c *relaxedBodyCanonicalizer) Write(b []byte) (int, error) {
 		c.written = true
 	}
 
+	c.canonical = canonical
+
+	
+
 	_, err := c.w.Write(canonical)
-	return written, err
+	return  written, err
 }
 
 func (c *relaxedBodyCanonicalizer) Close() error {
 	if c.written {
-		if _, err := c.w.Write([]byte(crlf)); err != nil {
+		if  _, err := c.w.Write([]byte(crlf)); err != nil {
 			return err
 		}
 	}

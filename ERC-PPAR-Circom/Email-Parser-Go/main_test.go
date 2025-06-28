@@ -17,11 +17,10 @@ package dkim
 // It does not verify the email signature.                                                //
 //                                                                                        //
 /*----------------------------------------------------------------------------------------*/
-package dkim
 
 	import (
 		"crypto"
-		"crypto/rsa"
+		// "crypto/rsa"
 		"math/big"
 		"fmt"
 		"strings"
@@ -32,6 +31,9 @@ package dkim
 
 		"bufio"
 		"io"
+		"encoding/json"
+		"os"
+		"reflect"
 		
 	)
 	
@@ -138,13 +140,30 @@ Content-Type: text/html; charset="UTF-8"
 		googlePubKeyN := new(big.Int)
 		googlePubKeyE := 0
 		headerHelper := []byte{}
+		body := []byte{}
+		bodyHashed := []byte{}
 
-		t.Log("[Signature] Starting test...")
 
 		r := strings.NewReader(Email)
 
 		bufr := bufio.NewReader(r)
 		h, _ := readHeader(bufr)
+		// Read the rest of bufr as the body after headers have been read into h
+		// bodyBytes, err := io.ReadAll(bufr)
+		// if err != nil {
+		// 	t.Log("Error reading body:", err)
+		// 	return
+		// }
+		// t.Log(bodyBytes)
+		// body := string(bodyBytes)
+		// body2 := "123456"
+		// bodyHash := crypto.SHA256.New()
+		// bodyHash.Write([]byte(body2))
+		// bodyHashBytes := bodyHash.Sum(nil)
+		// // bodyHashInt := new(big.Int).SetBytes(bodyHashBytes)
+		// t.Log("bodyHashInt:  (big int)  ", bodyHashBytes)	
+		
+		// t.Log("body:  (string)  ", body)
 
 		var signatures []*signature
 		for i, kv := range h {
@@ -155,6 +174,7 @@ Content-Type: text/html; charset="UTF-8"
 		}
 
 		if len(signatures) == 1 {
+			// t.Log("There is only one signature")
 			// If there is only one signature - just verify it.
 			sigValue := signatures[0].v
 			sigField := h[signatures[0].i]
@@ -189,7 +209,6 @@ Content-Type: text/html; charset="UTF-8"
 			}
 		
 			// Query public key
-			// TODO: compute hash in parallel
 			methods := []string{string(QueryMethodDNSTXT)}
 			if methodsStr, ok := params["q"]; ok {
 				methods = parseTagList(methodsStr)
@@ -201,35 +220,32 @@ Content-Type: text/html; charset="UTF-8"
 					break
 				}
 			}
-			verif := res.Verifier.Public().(*rsa.PublicKey)
-			googlePubKeyN = verif.N
-			googlePubKeyE = verif.E
-			if err != nil {
-				return //verif, err
-			} else if res == nil {
-				return //verif, permFailError("unsupported public key query method")
-			}
+			t.Log("res:  (queryResult)  ", res)
+			// verif := res.Verifier.Public().(*rsa.PublicKey)
+			// googlePubKeyN = verif.N
+			// googlePubKeyE = verif.E
+			
 
 		
 			// Parse algos
-			keyAlgo, hashAlgo, ok := strings.Cut(stripWhitespace(params["a"]), "-")
+			_, hashAlgo, ok := strings.Cut(stripWhitespace(params["a"]), "-")
 			if !ok {
 				return //verif, permFailError("malformed algorithm name")
 			}
 			
 			// Check hash algo
-			if res.HashAlgos != nil {
-				ok := false
-				for _, algo := range res.HashAlgos {
-					if algo == hashAlgo {
-						ok = true
-						break
-					}
-				}
-				if !ok {
-					return //verif, permFailError("inappropriate hash algorithm")
-				}
-			}
+			// if res.HashAlgos != nil {
+			// 	ok := false
+			// 	for _, algo := range res.HashAlgos {
+			// 		if algo == hashAlgo {
+			// 			ok = true
+			// 			break
+			// 		}
+			// 	}
+			// 	if !ok {
+			// 		return //verif, permFailError("inappropriate hash algorithm")
+			// 	}
+			// }
 			var hash crypto.Hash
 			switch hashAlgo {
 			case "sha1":
@@ -241,23 +257,24 @@ Content-Type: text/html; charset="UTF-8"
 			default:
 				return //verif, permFailError("unsupported hash algorithm")
 			}
+
 			// Check key algo
-			if res.KeyAlgo != keyAlgo {
-				return //verif, permFailError("inappropriate key algorithm")
-			}
+			// if res.KeyAlgo != keyAlgo {
+			// 	return //verif, permFailError("inappropriate key algorithm")
+			// }
 		
-			if res.Services != nil {
-				ok := false
-				for _, s := range res.Services {
-					if s == "email" {
-						ok = true
-						break
-					}
-				}
-				if !ok {
-					return //verif, permFailError("inappropriate service")
-				}
-			}
+			// if res.Services != nil {
+			// 	ok := false
+			// 	for _, s := range res.Services {
+			// 		if s == "email" {
+			// 			ok = true
+			// 			break
+			// 		}
+			// 	}
+			// 	if !ok {
+			// 		return //verif, permFailError("inappropriate service")
+			// 	}
+			// }
 		
 			headerCan, bodyCan := parseCanonicalization(params["c"])
 			
@@ -276,7 +293,8 @@ Content-Type: text/html; charset="UTF-8"
 			}
 		
 			// Parse body hash and signature
-			bodyHashed, err := decodeBase64String(params["bh"])
+			bodyHashed, err = decodeBase64String(params["bh"])
+
 			bh = big.NewInt(0).SetBytes(bodyHashed)
 			if err != nil {
 				return //verif, permFailError("malformed body hash: " + err.Error())
@@ -286,15 +304,46 @@ Content-Type: text/html; charset="UTF-8"
 			if err != nil {
 				return //verif, permFailError("malformed signature: " + err.Error())
 			}
+
 			// Check body hash
 			hasher := hash.New()
+			// bufr2 := bufio.NewReader()
 			wc := canonicalizers[bodyCan].CanonicalizeBody(hasher)
+			// body := nil
+			// t.Log(body)
 			if _, err := io.Copy(wc, bufr); err != nil {
 				return //verif, err
 			}
+			
 			if err := wc.Close(); err != nil {
 				return //verif, err
 			}
+
+			
+			// Extract the body from wc if possible
+			// Assuming wc is a struct with a field that holds the body as []byte
+			// Try to access the []byte field from wc using type assertion or reflection
+
+			// Try type assertion first (if wc is a known type)
+			if bodyWriter, ok := wc.(interface{ Bytes() []byte }); ok {
+				body = bodyWriter.Bytes()
+			} else {
+				// Fallback: use reflection to find the last []byte field
+				wcv := reflect.ValueOf(wc)
+				if wcv.Kind() == reflect.Ptr {
+					wcv = wcv.Elem()
+				}
+				for i := 0; i < wcv.NumField(); i++ {
+					field := wcv.Field(i)
+					if field.Kind() == reflect.Slice && field.Type().Elem().Kind() == reflect.Uint8 {
+						// Save the last []byte found
+						body = field.Bytes()
+					}
+				}
+			}
+
+
+
 			if subtle.ConstantTimeCompare(hasher.Sum(nil), bodyHashed) != 1 {
 				return //verif, failError("body hash did not verify")
 			}
@@ -333,43 +382,107 @@ Content-Type: text/html; charset="UTF-8"
 			
 		}
 
-		headerHelperStr := "["
-		for i, b := range headerHelper {
-			if i > 0 {
-				headerHelperStr += ","
-			}
-			headerHelperStr += "\"" + fmt.Sprintf("%v", b) + "\""
+		headerHelperStr := []string{}
+		for _, b := range headerHelper {
+			
+			headerHelperStr = append(headerHelperStr,  fmt.Sprintf("%v", b))
 		}
-		headerHelperStr += "]"
+		fmt.Println("headerHelperStr:  (string)  ", headerHelperStr)
 
 		// Params for signature verify
 		fmt.Println("header:  (bytes)  ", header)
-		//fmt.Println("bh:  (big int)  ", bh)
+		fmt.Println("bh:  (big int)  ", bh)
 		fmt.Println("sigArray:  (big int)  ", sigArray)
 		fmt.Println("googlePubKeyN:  (big int)  ", googlePubKeyN)
 		fmt.Println("googlePubKeyE:  (int)  ", googlePubKeyE)
 
+
+
 		// Params for gmail-hash-verify
-		fmt.Println("header:  (bytes)  ", header)
+		// fmt.Println("header:  (bytes)  ", header)
 		gmail := contains(headerHelper, []byte("from:")[0])
 		highIntHash, lowIntHash := prepareHashInput([]byte(gmail))
-		fmt.Println("highIntHash:  (big int)  ", highIntHash)
-		fmt.Println("lowIntHash:  (big int)  ", lowIntHash)
+		// fmt.Println("highIntHash:  (big int)  ", highIntHash)
+		// fmt.Println("lowIntHash:  (big int)  ", lowIntHash)
 		//fmt.Println("header:  (big int)  ", headerHelper)
 
+		jsonObj := map[string]interface{}{
+			"header": headerHelperStr,
+			"gmailHash": []string{
+				highIntHash.String(),
+				lowIntHash.String(),
+			},
+		}
+		jsonBytes, err := json.MarshalIndent(jsonObj, "", "  ")
+		if err != nil {
+			t.Log("Error marshaling JSON:", err)
+		} else {
+			// t.Log(string(jsonBytes))
+			err := os.WriteFile("../input-files/gmail-hash-input.json", jsonBytes, 0644)
+			if err != nil {
+				t.Log("Error writing JSON to file:", err)
+		}
+		}
+
+
+
 		// Params for header-hash-verify
-		fmt.Println("header:  (bytes)  ", header)
-		fmt.Println("headerHash:  (big int)  ", headerHash)	
+		// fmt.Println("header:  (bytes)  ", header)
+		// fmt.Println("headerHash:  (big int)  ", headerHash)	
 		headerHashHigh := new(big.Int).SetBytes(headerHash[0:16])
 		headerHashLow := new(big.Int).SetBytes(headerHash[16:32])
-		fmt.Println("headerHashHigh:  (big int)  ", headerHashHigh)
-		fmt.Println("headerHashLow:  (big int)  ", headerHashLow)
+		// fmt.Println("headerHashHigh:  (big int)  ", headerHashHigh)
+		// fmt.Println("headerHashLow:  (big int)  ", headerHashLow)
 
+		jsonObj2 := map[string]interface{}{
+			"header": headerHelperStr,
+			"gmailHash": []string{
+				headerHashHigh.String(),
+				headerHashLow.String(),
+			},
+		}
+		jsonBytes2, err := json.MarshalIndent(jsonObj2, "", "  ")
+		if err != nil {
+			t.Log("Error marshaling JSON:", err)
+		} else {
+			// t.Log(string(jsonBytes2))
+			err := os.WriteFile("../input-files/header-hash-input.json", jsonBytes2, 0644)
+			if err != nil {
+				t.Log("Error writing JSON to file:", err)
+			}
+		}
+
+		
 		// Params for body-hash-verify
-		// <--TODO-->
-
-		// fmt.Println("headerHelper Size:  (int)  ", len(headerHelper))
-		// fmt.Println("headerHelper (formatted):", headerHelperStr)
+		// Take first 16 bytes and last 16 bytes
+		bhHighBytes := bodyHashed[:16]
+		bhLowBytes := bodyHashed[16:32]
+		bhHigh := new(big.Int).SetBytes(bhHighBytes)
+		bhLow := new(big.Int).SetBytes(bhLowBytes)
+		
+		bodyHelperStr := []string{}
+		for _, b := range body {
+			
+			bodyHelperStr = append(bodyHelperStr,  fmt.Sprintf("%v", b))
+		}
+		
+		jsonObj3 := map[string]interface{}{
+			"body": bodyHelperStr,
+			"gmailHash": []string{
+				bhHigh.String(),
+				bhLow.String(),
+			},
+		}
+		jsonBytes3, err := json.MarshalIndent(jsonObj3, "", "  ")
+		if err != nil {
+			t.Log("Error marshaling JSON:", err)
+		} else {
+			// t.Log(string(jsonBytes2))
+			err := os.WriteFile("../input-files/body-hash-input.json", jsonBytes3, 0644)
+			if err != nil {
+				t.Log("Error writing JSON to file:", err)
+			}
+		}
 		
 
 	}
