@@ -52,7 +52,8 @@ contract Guardian {
         if (mode == 0x02) {
             require(pwHash != 0 && salt != 0, "pw missing");
         } else {
-            pwHash = 0;  salt = 0;
+            pwHash = 0;  
+            salt = 0;
         }
         records[emailHash] = Record(oldEOA, pwHash, salt, mode);
         emit Registered(emailHash, mode);
@@ -93,10 +94,10 @@ contract Guardian {
 
         /* -- delegate call via EIP-7702 (simplified helper) -- */
         bytes memory cd = abi.encodeWithSelector(
-            RecoveryFacet.rotateKey.selector, newEOA);
+            RecoveryFacet.setAuthorizedAddress.selector, newEOA);
         // oldEOA already contains 0xef0100 || address(RecoveryFacet)
         (bool succ,) = r.oldEOA.call(cd);
-        require(succ, "rotate failed");
+        require(succ, "set authorized address failed");
 
         emit Recovered(r.oldEOA, newEOA, msg.sender, r.mode);
     }
