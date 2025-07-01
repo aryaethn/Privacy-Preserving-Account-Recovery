@@ -9,26 +9,35 @@ import "../src/RecoveryFacet.sol";
  * @dev Bypasses proof verification to test core recovery logic
  */
 contract MockGuardian {
+    /*------------------- custom errors -------------------*/
+    error EmailAlreadyRegistered();
+    error PasswordMissing();
+    error NonceInFlight();
+    error UserNotRegistered();
+    error NonceAlreadyUsed();
+    error InvalidProof();
+    error ProofTooShort();
+    error SetAuthorizedAddressFailed();
     /*------------------- user registry -------------------*/
+
     struct Record {
         address oldEOA;
-        bytes32 pwHash;   // 0 if mode 0x01
-        bytes32 salt;     // 0 if mode 0x01
-        uint8   mode;     // 0x01 Google, 0x02 Google+Pw
+        bytes32 pwHash; // 0 if mode 0x01
+        bytes32 salt; // 0 if mode 0x01
+        uint8 mode; // 0x01 Google, 0x02 Google+Pw
     }
-    mapping(bytes32 => Record) public records;     // emailHash ⇒ record
-    mapping(bytes32 => bool)   public usedNonce;   // replay protection
+
+    mapping(bytes32 => Record) public records; // emailHash ⇒ record
+    mapping(bytes32 => bool) public usedNonce; // replay protection
 
     /*------------------- mock settings -------------------*/
-    bool public shouldProofPass = true;  // Control proof verification outcome
-    bool public shouldCallFail = false;  // Control EIP-7702 call outcome
+    bool public shouldProofPass = true; // Control proof verification outcome
+    bool public shouldCallFail = false; // Control EIP-7702 call outcome
 
     /*------------------- events --------------------------*/
     event Registered(bytes32 indexed emailHash, uint8 mode);
     event Nonce(bytes32 indexed emailHash, bytes32 nonce);
-    event Recovered(address indexed oldEOA,
-                    address indexed newEOA,
-                    address guardian, uint8 mode);
+    event Recovered(address indexed oldEOA, address indexed newEOA, address guardian, uint8 mode);
 
     /*------------------- mock controls -------------------*/
     function setProofVerification(bool _shouldPass) external {
@@ -42,16 +51,16 @@ contract MockGuardian {
     /*------------------- admin / onboarding --------------*/
     function register(
         address oldEOA,
-        uint8   mode,           // 0x01 or 0x02
+        uint8 mode, // 0x01 or 0x02
         bytes32 emailHash,
         bytes32 pwHash,
         bytes32 salt
     ) external {
-        require(records[emailHash].oldEOA == address(0), "exists");
+        if (records[emailHash].oldEOA != address(0)) revert EmailAlreadyRegistered();
         if (mode == 0x02) {
-            require(pwHash != 0 && salt != 0, "pw missing");
+            if (pwHash == 0 || salt == 0) revert PasswordMissing();
         } else {
-            pwHash = 0;  
+            pwHash = 0;
             salt = 0;
         }
         records[emailHash] = Record(oldEOA, pwHash, salt, mode);
@@ -61,29 +70,24 @@ contract MockGuardian {
     /*------------------- recovery ------------------------*/
     function requestNonce(bytes32 emailHash) external returns (bytes32 n) {
         n = keccak256(abi.encodePacked(emailHash, blockhash(block.number - 1)));
-        require(!usedNonce[n], "in-flight");
+        if (usedNonce[n]) revert NonceInFlight();
         emit Nonce(emailHash, n);
     }
 
-    function recover(
-        bytes32   emailHash,
-        address   newEOA,
-        bytes32   n,
-        bytes     calldata proof
-    ) external {
+    function recover(bytes32 emailHash, address newEOA, bytes32 n, bytes calldata proof) external {
         Record memory r = records[emailHash];
-        require(r.oldEOA != address(0), "unregistered");
-        require(!usedNonce[n],          "nonce used");
+        if (r.oldEOA == address(0)) revert UserNotRegistered();
+        if (usedNonce[n]) revert NonceAlreadyUsed();
 
         // Mock proof verification - controllable for testing
-        require(shouldProofPass, "bad proof");
-        require(proof.length >= 32, "proof too short"); // Basic length check
-        
+        if (!shouldProofPass) revert InvalidProof();
+        if (proof.length < 32) revert ProofTooShort(); // Basic length check
+
         usedNonce[n] = true;
 
         /* -- delegate call via EIP-7702 (mocked) -- */
         if (shouldCallFail) {
-            revert("set authorized address failed");
+            revert SetAuthorizedAddressFailed();
         }
 
         // Instead of actual EIP-7702 call, we'll directly call the RecoveryFacet
@@ -94,10 +98,7 @@ contract MockGuardian {
     }
 
     /*------------------- direct recovery for testing -------------------*/
-    function recoverDirect(
-        address recoveryFacet,
-        address newEOA
-    ) external {
+    function recoverDirect(address recoveryFacet, address newEOA) external {
         // Direct call to RecoveryFacet for testing
         RecoveryFacet(payable(recoveryFacet)).setAuthorizedAddress(newEOA);
     }
@@ -114,4 +115,4 @@ contract MockGuardian {
     function isNonceUsed(bytes32 nonce) external view returns (bool) {
         return usedNonce[nonce];
     }
-} 
+}

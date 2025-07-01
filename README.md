@@ -130,6 +130,33 @@ uint256[5] publicInputs = [
 - Password pre-image verification inside circuit
 - Dual-factor authentication (OAuth + password)
 
+## Custom Error Handling
+
+All contracts use **custom errors** instead of string-based `require` statements for better gas efficiency and debugging:
+
+### Guardian Contract Errors:
+```solidity
+error EmailAlreadyRegistered();    // Email hash already used
+error PasswordMissing();           // Mode 0x02 requires password + salt
+error NonceInFlight();             // Nonce already requested/pending
+error UserNotRegistered();         // Email hash not found in registry
+error NonceAlreadyUsed();          // Nonce has been consumed
+error InvalidProof();              // ZK proof verification failed
+error SetAuthorizedAddressFailed(); // EIP-7702 call failed
+```
+
+### RecoveryFacet Contract Errors:
+```solidity
+error OnlyGuardian();              // Only Guardian can call function
+error UnauthorizedExecution();     // Caller not authorized for execution
+```
+
+### Benefits:
+- **⛽ Gas Efficient**: ~20-50% gas savings vs string errors
+- **🔍 Precise Debugging**: Error selectors for exact error identification  
+- **📦 Smaller Bytecode**: Reduced deployment costs
+- **🎯 Type Safety**: Compile-time error validation
+
 ### 5. Verifier.sol
 
 **Base verifier contract** with shared PLONK proof structures and utilities.
@@ -223,6 +250,12 @@ guardian.recover(emailHash, newEOA, nonce, proof);
 | **Total Recovery** | **~785k gas** | **~790k gas** |
 
 *At 30 gwei / $3k ETH ≈ $1.88 per recovery*
+
+### Gas Optimizations:
+- ✅ **Custom Errors**: 20-50% savings on error handling vs string messages
+- ✅ **Assembly Storage**: Direct storage operations for authorized address
+- ✅ **Immutable Variables**: Guardian address stored as immutable
+- ✅ **Efficient Modifiers**: Single custom error per access control check
 
 ## Dependencies
 
@@ -360,6 +393,7 @@ assert(recoveryFacet.getAuthorizedAddress() == newEOA);
 - ✅ EIP-7702 integration functional  
 - ✅ Guardian access control implemented
 - ✅ **41/41 tests passing (100% success rate)**
+- ✅ **Custom errors for gas-efficient error handling**
 - ✅ MockGuardian for testing without ZK proofs
 - ✅ Full integration testing complete
 - ✅ Access control thoroughly tested

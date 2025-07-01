@@ -9,13 +9,17 @@ import "../lib/account-abstraction/contracts/accounts/Simple7702Account.sol";
  * Inherits from Simple7702Account for ERC-4337 compatibility.
  */
 contract RecoveryFacet is Simple7702Account {
+    /*------------------- custom errors -------------------*/
+    error OnlyGuardian();
+    error UnauthorizedExecution();
+
     // Guardian contract address that can call setAuthorizedAddress
     address public immutable guardian;
 
     event AuthorizedAddressSet(address indexed newAuthorizedAddress);
 
     modifier onlyGuardian() {
-        require(msg.sender == guardian, "only guardian");
+        if (msg.sender != guardian) revert OnlyGuardian();
         _;
     }
 
@@ -56,12 +60,9 @@ contract RecoveryFacet is Simple7702Account {
         assembly {
             authorizedAddress := sload(slot)
         }
-        
-        require(
-            msg.sender == address(this) ||
-            msg.sender == address(entryPoint()) ||
-            msg.sender == authorizedAddress,
-            "not from self, EntryPoint, or authorized address"
-        );
+
+        if (msg.sender != address(this) && msg.sender != address(entryPoint()) && msg.sender != authorizedAddress) {
+            revert UnauthorizedExecution();
+        }
     }
 }
