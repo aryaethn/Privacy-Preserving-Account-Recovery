@@ -19,3 +19,7 @@ Example/combined_test.r1cs
 Example/combined_test.sym
 Example/rsa_verify_pkcs1v15.r1cs
 Example/rsa_verify_pkcs1v15.sym
+.DS_Store
+
+# Ignore node_modules in ERC-PPAR-Circom
+ERC-PPAR-Circom/node_modules/
