@@ -159,11 +159,8 @@ func (c *relaxedBodyCanonicalizer) Write(b []byte) ( int, error) {
 
 	if !c.written && len(canonical) > 0 {
 		c.written = true
+		c.canonical = canonical
 	}
-
-	c.canonical = canonical
-
-	
 
 	_, err := c.w.Write(canonical)
 	return  written, err
