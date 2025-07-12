@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: CC0-1.0
 pragma solidity ^0.8.20;
-
 /**
  * PLONK verifier for Google-only recovery (mode 0x01)
  * Public inputs: [emailHash, newEOA, nonce]
