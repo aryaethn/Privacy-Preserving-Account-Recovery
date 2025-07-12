@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: CC0-1.0
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 /**
  * PLONK verifier for Google + password recovery (mode 0x02)
