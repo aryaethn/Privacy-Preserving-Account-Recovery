@@ -55,7 +55,7 @@ This circuit is responsible for verifying that the Gmail address is present in t
 
 ## Notes 🗒️
 
-- The circuits are tested in the Example directory. The tests are on the input files that are extracted by Email-Parser-Go/main.go which uses the Raw-Email.
+- The circuits are tested and they work perfectly. The tests are on the input files that are extracted by Email-Parser-Go/main.go. However, the test files are removed due to security reasons. 
 - To compile and create the proofs, we need the power of tau of 2^20, that can be downloaded [here](https://github.com/iden3/snarkjs?tab=readme-ov-file#7-prepare-phase-2). 
 
 
