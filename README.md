@@ -9,6 +9,8 @@ Unfortunately, we, [@4rdii](https://github.com/4rdii) and I, have been delayed b
 
 Noting our work was going to be a combination of these two ERCs, we respected them by not publishing our work as a separate ERC. 
 
+Important note: It has just come to our understanding that a working product of our idea exists, and apparantly, we are **too** late 🥲. The working product is called [ZKEmail](https://zk.email/), which is almost exactly our idea in production. If you are fascinated with this idea, you may have a look to the three other products and ERCs we mentioned here. They have done it sooner and better than us.
+
 The structure is as below:
 1. Email Parser: A code in Go programming language, based on DKIM registry to parse a raw email in DKIM format to extract the signatures.
 2. Circuits: Zero-knowledge circuits in Circom programming language, to provide the needed proofs for a DKIM signature ZKP to be given to a Verifier contract on-chain.
